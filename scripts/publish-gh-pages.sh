@@ -11,14 +11,16 @@ WORKTREE="${PUBLISH_WORKTREE:-$ROOT/.publish}"
 # 1. 构建前端（GH_PAGES=1 → Vite base=/sanguo-llm-game/，replays 已随 public 进入产物）
 GH_PAGES=1 npm run build -w @sanguo/web
 
-# 2. 准备 gh-pages 分支工作树
+# 2. 准备 gh-pages 分支工作树（始终以 origin/gh-pages 为基线，避免历史分叉）
 if [ ! -e "$WORKTREE/.git" ]; then
-  if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
-    git worktree add "$WORKTREE" "$BRANCH"
-  else
-    git worktree add --detach "$WORKTREE"
-    git -C "$WORKTREE" checkout -b "$BRANCH"
-  fi
+  git worktree add --detach "$WORKTREE"
+fi
+if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+  git -C "$WORKTREE" checkout -B "$BRANCH" origin/gh-pages
+elif git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
+  git -C "$WORKTREE" checkout "$BRANCH"
+else
+  git -C "$WORKTREE" checkout -B "$BRANCH"
 fi
 
 # 3. 清空并拷贝构建产物（含 replays/；保留 .git 工作树指针）
