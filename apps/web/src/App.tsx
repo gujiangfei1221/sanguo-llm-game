@@ -141,7 +141,7 @@ export function App() {
     return (
       <main className="app-shell">
         <header className="masthead">
-          <div><p className="eyebrow">LLM THREE KINGDOMS</p><h1>三国大模型回合战</h1></div>
+          <div><h1>大模型血战三国</h1></div>
         </header>
         {error && <div className="error-banner" onClick={() => setError("")}>{error}</div>}
         <Home models={models} games={games} onCreated={openGame} onOpen={openGame} onError={setError} />
@@ -276,7 +276,7 @@ function GameView({ gameId, models, onError, onClose }: { gameId: string; models
 
   return <div className="battlefield-shell" data-mobile-view={mobileView}>
     <header className="battle-topbar">
-      <button className="battle-brand" onClick={onClose}><strong>问鼎</strong><span>{game.name}</span></button>
+      <button className="battle-brand" onClick={onClose}><strong>大模型血战三国</strong><span>{game.name}</span></button>
       <div className="stage-track" aria-label="对局阶段">
         <span className={currentStage === "MUSTER" ? "active" : ""}>蓄势 1—8</span><i></i><span className={currentStage === "CONTEST" ? "active" : ""}>争锋 9—18</span><i></i><span className={currentStage === "DECISIVE" ? "active" : ""}>决战 19+</span>
       </div>
