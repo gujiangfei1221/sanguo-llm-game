@@ -427,6 +427,7 @@ export class GameService {
 
     if (phase === "FINISHED") {
       this.replayExporter.writeReplay(gameId);
+      this.replayExporter.writeIndex();
       if (this.autoRotate) setTimeout(() => this.rotateToNextGame(gameId), 1000);
     }
     this.replayExporter.updateLive();

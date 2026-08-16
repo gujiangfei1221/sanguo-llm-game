@@ -37,7 +37,8 @@ export interface ReplayManifestEntry {
   name: string;
   turn: number;
   winnerFactionId?: string;
-  finishedAt: string;
+  createdAt?: string;
+  finishedAt?: string;
 }
 
 export interface LiveSnapshot {
@@ -49,6 +50,7 @@ export interface LiveSnapshot {
   state?: GameState;
   config?: GameRuntimeConfig;
   events?: StoredEvent[];
+  createdAt?: string;
   updatedAt?: string;
   exportedAt?: string;
 }
@@ -66,6 +68,22 @@ function timeAgo(iso?: string) {
   if (seconds < 60) return `${seconds} 秒前`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
   return `${Math.floor(seconds / 3600)} 小时前`;
+}
+
+function fmtTime(iso?: string) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function timeRange(startIso?: string, endIso?: string) {
+  if (!startIso) return "";
+  const start = fmtTime(startIso);
+  if (!endIso) return start;
+  const end = fmtTime(endIso);
+  if (start.slice(0, 5) === end.slice(0, 5)) return `${start} -> ${end.slice(6)}`;
+  return `${start} -> ${end}`;
 }
 
 export function WatchHome({ onOpenLive, onOpenReplay }: { onOpenLive: () => void; onOpenReplay: (id: string) => void }) {
@@ -105,14 +123,18 @@ export function WatchHome({ onOpenLive, onOpenReplay }: { onOpenLive: () => void
               : <div className="live-card">
                   <div className="live-card-head"><span className="live-dot" />正在直播</div>
                   <strong>{live.name}</strong>
-                  <p>第 {live.turn} 回合 · {phaseNames[live.phase!]} · 快照 {timeAgo(live.exportedAt)}</p>
+                  <p>第 {live.turn} 回合 · {phaseNames[live.phase!]} · 开始于 {fmtTime(live.createdAt)}</p>
                   <button className="primary" onClick={onOpenLive}>观看直播</button>
                 </div>}
           <div className="section-label">历史战报（{replays?.length ?? 0} 局）</div>
           {replays && replays.length === 0 && <p className="muted">还没有已结束的对局。</p>}
           {replays?.map((game) => (
             <button className="game-row" key={game.id} onClick={() => onOpenReplay(game.id)}>
-              <span><strong>{game.name}</strong><small>第 {game.turn} 回合 · {game.winnerFactionId ? `${factionNames[game.winnerFactionId] ?? game.winnerFactionId}胜` : "未分胜负"}</small></span>
+              <span>
+                <strong>{game.name}</strong>
+                <small>第 {game.turn} 回合 · {game.winnerFactionId ? `${factionNames[game.winnerFactionId] ?? game.winnerFactionId}胜` : "未分胜负"}</small>
+                <small className="game-times">{timeRange(game.createdAt, game.finishedAt)}</small>
+              </span>
               <span>观看回放</span>
             </button>
           ))}

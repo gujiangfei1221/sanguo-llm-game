@@ -8,8 +8,8 @@ ROOT="$(pwd)"
 BRANCH="gh-pages"
 WORKTREE="${PUBLISH_WORKTREE:-$ROOT/.publish}"
 
-# 0. 同步最新源码（发布前拉取 main，失败则用现有源码继续）
-git pull --ff-only origin main >/dev/null 2>&1 || echo "[publish] 源码同步失败，继续用现有源码"
+# 0. 全量重导回放（含战报索引 index.json；由 cron 先行 git pull 同步源码）
+( cd "$ROOT" && npm run export -w @sanguo/server >/dev/null 2>&1 ) || echo "[publish] 回放导出失败，继续发布现有内容"
 
 # 1. 构建前端（GH_PAGES=1 → Vite base=/sanguo-llm-game/，replays 已随 public 进入产物）
 GH_PAGES=1 npm run build -w @sanguo/web

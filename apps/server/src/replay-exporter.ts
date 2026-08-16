@@ -63,6 +63,7 @@ export interface ReplayManifestEntry {
   name: string;
   turn: number;
   winnerFactionId?: string;
+  createdAt: string;
   finishedAt: string;
 }
 
@@ -75,6 +76,7 @@ export interface LiveSnapshot {
   state: GameState;
   config: GameRuntimeConfig;
   events: StoredEvent[];
+  createdAt: string;
   updatedAt: string;
   exportedAt: string;
 }
@@ -166,6 +168,7 @@ export class ReplayExporter {
       state,
       config,
       events,
+      createdAt: active.created_at,
       updatedAt: active.updated_at,
       exportedAt: new Date().toISOString()
     };
@@ -184,6 +187,7 @@ export class ReplayExporter {
         name: game.name,
         turn: state.turn,
         winnerFactionId: state.winnerFactionId,
+        createdAt: game.created_at,
         finishedAt: game.updated_at
       };
     });
