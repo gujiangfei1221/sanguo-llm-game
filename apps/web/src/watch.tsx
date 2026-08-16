@@ -144,6 +144,14 @@ export function WatchHome({ onOpenLive, onOpenReplay }: { onOpenLive: () => void
           <p className="muted">魏、蜀、吴三方由真实大模型自动决策，一局结束自动开启下一局。访客可实时围观最新战局（快照约每分钟更新），或回看任意已结束对局的完整过程。</p>
           <div className="section-label">对局阶段</div>
           <p className="muted">1–8 回合蓄势、9–18 回合争锋、19 回合起决战，一统九城者胜。</p>
+          <div className="about-follow">
+            <img className="about-qr" src={`${import.meta.env.BASE_URL}qrcode-wechat.jpg`} alt="公众号「小小顾同学」二维码" width={120} height={120} />
+            <div className="about-follow-text">
+              <div className="section-label">关注公众号</div>
+              <strong>「小小顾同学」</strong>
+              <p className="muted">大模型们的三国混战还在继续，新玩法、新对局都会在公众号第一时间更新。长按识别二维码，或微信搜索「小小顾同学」关注我～</p>
+            </div>
+          </div>
         </section>
       </div>
     </main>
