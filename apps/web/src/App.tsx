@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { FactionController, GamePhase, GameRuntimeConfig, GameState, LegalAction, MainAction, ModelConfig, ModelDecision } from "@sanguo/shared";
 import { LiveView, ReplayView, WatchHome } from "./watch";
+import { FollowPrompt } from "./FollowPrompt";
 
 interface GameSummary {
   id: string;
@@ -131,14 +132,18 @@ export function App() {
   const goHome = () => { location.hash = ""; };
 
   if (mode === "loading") return <main className="app-shell"><div className="battle-loading">正在检测运行模式……</div></main>;
-  if (route.kind === "game") return mode === "api"
-    ? <GameView gameId={route.id!} models={models} onError={setError} onClose={goHome} />
-    : <ReplayView gameId={route.id!} onClose={goHome} />;
-  if (route.kind === "replay") return <ReplayView gameId={route.id!} onClose={goHome} />;
-  if (route.kind === "live") return <LiveView onClose={goHome} />;
 
-  if (mode === "api") {
-    return (
+  let view: ReactNode;
+  if (route.kind === "game") {
+    view = mode === "api"
+      ? <GameView gameId={route.id!} models={models} onError={setError} onClose={goHome} />
+      : <ReplayView gameId={route.id!} onClose={goHome} />;
+  } else if (route.kind === "replay") {
+    view = <ReplayView gameId={route.id!} onClose={goHome} />;
+  } else if (route.kind === "live") {
+    view = <LiveView onClose={goHome} />;
+  } else if (mode === "api") {
+    view = (
       <main className="app-shell">
         <header className="masthead">
           <div><h1>大模型血战三国</h1></div>
@@ -147,8 +152,10 @@ export function App() {
         <Home models={models} games={games} onCreated={openGame} onOpen={openGame} onError={setError} />
       </main>
     );
+  } else {
+    view = <WatchHome onOpenLive={() => { location.hash = "live"; }} onOpenReplay={(id) => { location.hash = `replay=${id}`; }} />;
   }
-  return <WatchHome onOpenLive={() => { location.hash = "live"; }} onOpenReplay={(id) => { location.hash = `replay=${id}`; }} />;
+  return <>{view}<FollowPrompt /></>;
 }
 
 function Home({ models, games, onCreated, onOpen, onError }: { models: ModelConfig[]; games: GameSummary[]; onCreated: (id: string) => void; onOpen: (id: string) => void; onError: (message: string) => void }) {
