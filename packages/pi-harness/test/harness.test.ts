@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { testing } from "../src/index.js";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import type { Observation } from "@sanguo/shared";
+import { PiHarness, testing } from "../src/index.js";
 
 const decision = {
   action: { type: "rest" },
@@ -8,6 +12,50 @@ const decision = {
   reasonSummary: "等待时机",
   privateMemory: "继续观察"
 };
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
+
+async function createFakePi(successAfter: number | undefined) {
+  const directory = await mkdtemp(join(tmpdir(), "sanguo-fake-pi-"));
+  temporaryDirectories.push(directory);
+  const command = join(directory, "fake-pi.mjs");
+  const counterPath = join(directory, "counter.txt");
+  const callsPath = join(directory, "calls.jsonl");
+  const script = `#!/usr/bin/env node
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+const counterPath = ${JSON.stringify(counterPath)};
+const callsPath = ${JSON.stringify(callsPath)};
+const count = existsSync(counterPath) ? Number(readFileSync(counterPath, "utf8")) + 1 : 1;
+writeFileSync(counterPath, String(count));
+appendFileSync(callsPath, JSON.stringify(process.argv.slice(2)) + "\\n");
+const decision = ${JSON.stringify(decision)};
+if (${successAfter ?? "undefined"} !== undefined && count >= ${successAfter ?? "undefined"}) {
+  console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify(decision) }] } }));
+} else {
+  console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "继续分析局势" + count }] } }));
+}
+`;
+  await writeFile(command, script);
+  await chmod(command, 0o755);
+  return { command, callsPath };
+}
+
+const observation = {
+  leaderName: "曹操",
+  persona: "审时度势",
+  stage: "MUSTER",
+  turn: 1,
+  factionId: "wei",
+  privateMemory: "",
+  decisiveWar: false,
+  legalActions: [],
+  legalDiplomacy: [],
+  state: { cities: [] }
+} as unknown as Observation;
 
 describe("Pi JSONL parser", () => {
   it("extracts the final assistant text", () => {
@@ -84,5 +132,40 @@ describe("Pi JSONL parser", () => {
       }
     });
     expect(testing.extractDecision(output).decision.diplomacy.initiative).toEqual({ type: "propose_joint_attack", targetFactionId: "shu", enemyFactionId: "wei" });
+  });
+
+  it("continues the same session after thinking-only responses", async () => {
+    const fakePi = await createFakePi(3);
+    const harness = new PiHarness({
+      command: fakePi.command,
+      timeoutMs: 5_000,
+      maxAttempts: 1,
+      thinkingOnlyMaxAttempts: 3
+    });
+
+    const result = await harness.decide({ modelId: "fake-model", observation });
+    expect(result.attempts).toBe(3);
+    expect(result.decision.reasonSummary).toBe("等待时机");
+
+    const calls = (await readFile(fakePi.callsPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(calls).toHaveLength(3);
+    const sessionIds = calls.map((args) => args[args.indexOf("--session-id") + 1]);
+    expect(new Set(sessionIds).size).toBe(1);
+    expect(calls[1]?.at(-1)).toContain("上一轮");
+    expect(calls[2]?.at(-1)).toContain("第 3/3 次请求");
+  });
+
+  it("stops after three thinking-only responses", async () => {
+    const fakePi = await createFakePi(undefined);
+    const harness = new PiHarness({
+      command: fakePi.command,
+      timeoutMs: 5_000,
+      maxAttempts: 2,
+      thinkingOnlyMaxAttempts: 3
+    });
+
+    await expect(harness.decide({ modelId: "fake-model", observation })).rejects.toThrow("连续 3 次只输出 thinking");
+    const calls = (await readFile(fakePi.callsPath, "utf8")).trim().split("\n");
+    expect(calls).toHaveLength(3);
   });
 });

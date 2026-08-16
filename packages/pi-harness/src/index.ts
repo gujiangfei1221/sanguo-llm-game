@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { diplomacyInitiativeSchema, modelDecisionSchema, type DiplomacyInitiative, type ModelDecision, type Observation } from "@sanguo/shared";
@@ -32,6 +33,7 @@ export interface PiHarnessOptions {
   timeoutMs?: number;
   provider?: string;
   maxAttempts?: number;
+  thinkingOnlyMaxAttempts?: number;
   thinking?: string;
 }
 
@@ -106,6 +108,15 @@ function buildSystemPrompt(observation: Observation) {
 
 function buildPrompt(observation: Observation) {
   return `请根据以下局势提交第 ${observation.turn} 回合决策：\n${JSON.stringify(observation)}`;
+}
+
+function buildThinkingContinuationPrompt(attempt: number, maxAttempts: number) {
+  return [
+    "你上一轮已经完成了一段思考，但没有输出最终答案。上一轮的完整回答（包括 thinking）已保留在当前会话中。",
+    "请直接基于已有思考继续，不要重新复述分析过程，也不要输出 thinking 内容。",
+    "现在立即按照最初要求输出一个完整、合法的 JSON 决策对象，不要 Markdown 代码块、解释或前后缀。",
+    `这是仅 thinking 后的第 ${attempt}/${maxAttempts} 次请求；必须给出最终答案。`
+  ].join("\n");
 }
 
 function parseJsonText(text: string) {
@@ -224,11 +235,13 @@ function sameInitiative(candidate: DiplomacyInitiative, legal: DiplomacyInitiati
   return true;
 }
 
-async function runProcess(options: Required<PiHarnessOptions>, request: HarnessRequest) {
-  const workingDirectory = await mkdtemp(join(tmpdir(), "sanguo-pi-"));
+async function runProcess(
+  options: Required<PiHarnessOptions>,
+  request: HarnessRequest,
+  context: { workingDirectory: string; sessionDirectory: string; sessionId: string; prompt: string }
+) {
   const startedAt = Date.now();
-  try {
-    const args = [
+  const args = [
       "-p",
       "--mode", "json",
       "--provider", options.provider,
@@ -240,10 +253,11 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
       "--no-prompt-templates",
       "--no-themes",
       "--no-context-files",
-      "--no-session",
+      "--session-dir", context.sessionDirectory,
+      "--session-id", context.sessionId,
       "--no-approve",
       "--system-prompt", buildSystemPrompt(request.observation),
-      buildPrompt(request.observation)
+      context.prompt
     ];
 
     const allowedEnvironment: NodeJS.ProcessEnv = {
@@ -260,7 +274,7 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
     };
 
     const child = spawn(options.command, args, {
-      cwd: workingDirectory,
+      cwd: context.workingDirectory,
       env: allowedEnvironment,
       shell: false,
       stdio: ["ignore", "pipe", "pipe"]
@@ -268,6 +282,7 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
 
     let streamedText = "";
     let finalText = "";
+    let thinkingBytes = 0;
     let usage: Record<string, unknown> | undefined;
     let stderr = "";
     let diagnosticBuffer = "";
@@ -277,7 +292,7 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
 
     const processLine = (line: string) => {
       if (!line.trim()) return;
-      let event: { type?: string; assistantMessageEvent?: { type?: string; delta?: string; content?: string; usage?: Record<string, unknown> }; message?: { role?: string; content?: Array<{ type?: string; text?: string }>; usage?: Record<string, unknown> } };
+      let event: { type?: string; assistantMessageEvent?: { type?: string; delta?: string; content?: string; usage?: Record<string, unknown> }; message?: { role?: string; content?: Array<{ type?: string; text?: string; thinking?: string }>; usage?: Record<string, unknown> } };
       try {
         event = JSON.parse(line) as typeof event;
       } catch {
@@ -289,6 +304,8 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
         if (firstOutputMs === undefined && (update?.type === "thinking_delta" || update?.type === "text_delta") && update.delta) {
           firstOutputMs = Date.now() - startedAt;
         }
+        if (update?.type === "thinking_delta" && typeof update.delta === "string") thinkingBytes += Buffer.byteLength(update.delta);
+        if (update?.type === "thinking_end" && typeof update.content === "string") thinkingBytes = Math.max(thinkingBytes, Buffer.byteLength(update.content));
         if (update?.type === "text_delta" && typeof update.delta === "string" && Buffer.byteLength(streamedText) < 2 * 1024 * 1024) streamedText += update.delta;
         if (update?.type === "text_end" && typeof update.content === "string") streamedText = update.content;
         if ((update?.type === "done" || update?.type === "error") && update.usage) usage = update.usage;
@@ -297,6 +314,8 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
       if (event.type !== "message_end" && event.type !== "turn_end") return;
       const message = event.message;
       if (message?.role !== "assistant") return;
+      const thinking = message.content?.filter((item) => item.type === "thinking").map((item) => item.thinking ?? "").join("") ?? "";
+      if (thinking) thinkingBytes = Math.max(thinkingBytes, Buffer.byteLength(thinking));
       const text = message.content?.filter((item) => item.type === "text").map((item) => item.text ?? "").join("") ?? "";
       if (text) finalText = text;
       if (message.usage) usage = message.usage;
@@ -336,8 +355,20 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
     if (diagnosticBuffer.trim()) processLine(diagnosticBuffer);
 
     if (exitCode !== 0) throw new Error(`Pi 退出码 ${exitCode}: ${stderr.trim().slice(-1000)}`);
+    const diagnostics = { firstOutputMs, jsonlEvents, stdoutBytes };
     const decisionText = finalText || streamedText;
-    if (!decisionText) throw new Error("Pi JSONL 中没有 assistant 最终文本");
+    if (!decisionText) {
+      if (thinkingBytes > 0) {
+        return {
+          kind: "thinking_only" as const,
+          thinkingBytes,
+          usage,
+          durationMs: Date.now() - startedAt,
+          diagnostics
+        };
+      }
+      throw new Error("Pi JSONL 中既没有 assistant 最终文本，也没有 thinking 内容");
+    }
     const decision = modelDecisionSchema.safeParse(normalizeDecision(parseJsonText(decisionText), request.observation.privateMemory));
     if (!decision.success) throw new Error(`Pi 决策格式错误：${decision.error.issues.map((issue) => issue.message).join("；")}`);
     const initiative = decision.data.diplomacy.initiative;
@@ -346,11 +377,49 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
       decision.data.reasonSummary = `${decision.data.reasonSummary}（外交行为不在当前白名单中，已忽略）`;
     }
     return {
+      kind: "decision" as const,
       decision: decision.data,
       usage,
       durationMs: Date.now() - startedAt,
-      diagnostics: { firstOutputMs, jsonlEvents, stdoutBytes }
+      diagnostics
     };
+}
+
+class ThinkingOnlyExhaustedError extends Error {}
+
+async function runConversation(options: Required<PiHarnessOptions>, request: HarnessRequest) {
+  const workingDirectory = await mkdtemp(join(tmpdir(), "sanguo-pi-"));
+  const sessionDirectory = join(workingDirectory, "sessions");
+  const sessionId = randomUUID();
+  const startedAt = Date.now();
+  let jsonlEvents = 0;
+  let stdoutBytes = 0;
+  let firstOutputMs: number | undefined;
+  let lastThinkingBytes = 0;
+  await mkdir(sessionDirectory, { recursive: true });
+
+  try {
+    for (let attempt = 1; attempt <= options.thinkingOnlyMaxAttempts; attempt += 1) {
+      const prompt = attempt === 1
+        ? buildPrompt(request.observation)
+        : buildThinkingContinuationPrompt(attempt, options.thinkingOnlyMaxAttempts);
+      const result = await runProcess(options, request, { workingDirectory, sessionDirectory, sessionId, prompt });
+      jsonlEvents += result.diagnostics.jsonlEvents;
+      stdoutBytes += result.diagnostics.stdoutBytes;
+      if (firstOutputMs === undefined && result.diagnostics.firstOutputMs !== undefined) firstOutputMs = result.diagnostics.firstOutputMs;
+
+      if (result.kind === "decision") {
+        return {
+          decision: result.decision,
+          usage: result.usage,
+          durationMs: Date.now() - startedAt,
+          attempts: attempt,
+          diagnostics: { firstOutputMs, jsonlEvents, stdoutBytes }
+        };
+      }
+      lastThinkingBytes = result.thinkingBytes;
+    }
+    throw new ThinkingOnlyExhaustedError(`Pi 连续 ${options.thinkingOnlyMaxAttempts} 次只输出 thinking、没有 assistant 最终文本，已中断（最后一次 thinking ${lastThinkingBytes} bytes）`);
   } finally {
     await rm(workingDirectory, { recursive: true, force: true });
   }
@@ -364,7 +433,8 @@ export class PiHarness implements DecisionHarness {
       command: options.command ?? process.env.PI_COMMAND ?? "pi",
       timeoutMs: options.timeoutMs ?? Number(process.env.PI_TIMEOUT_MS ?? 180000),
       provider: options.provider ?? process.env.PI_PROVIDER ?? "ark-coding",
-      maxAttempts: options.maxAttempts ?? Number(process.env.PI_MAX_ATTEMPTS ?? 1),
+      maxAttempts: Math.max(1, options.maxAttempts ?? Number(process.env.PI_MAX_ATTEMPTS ?? 1)),
+      thinkingOnlyMaxAttempts: Math.max(1, options.thinkingOnlyMaxAttempts ?? Number(process.env.PI_THINKING_ONLY_MAX_ATTEMPTS ?? 3)),
       thinking: options.thinking ?? process.env.PI_THINKING ?? "low"
     };
   }
@@ -373,9 +443,9 @@ export class PiHarness implements DecisionHarness {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.options.maxAttempts; attempt += 1) {
       try {
-        const result = await runProcess(this.options, request);
-        return { ...result, attempts: attempt };
+        return await runConversation(this.options, request);
       } catch (error) {
+        if (error instanceof ThinkingOnlyExhaustedError) throw error;
         lastError = error;
       }
     }
@@ -439,4 +509,4 @@ export function createHarness(): DecisionHarness {
   return process.env.HARNESS_MODE === "fake" ? new FakeHarness() : new PiHarness();
 }
 
-export const testing = { extractDecision, normalizeDecision, parseJsonText };
+export const testing = { extractDecision, normalizeDecision, parseJsonText, buildThinkingContinuationPrompt };
