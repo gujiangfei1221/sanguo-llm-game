@@ -150,7 +150,8 @@ export class GameService {
       const game = this.requireGame(finishedGameId);
       const config = parseJson<GameRuntimeConfig>(game.config_json);
       const count = this.database.get<{ c: number }>("SELECT COUNT(*) AS c FROM games")?.c ?? 0;
-      const created = this.createGame({ ...config, name: `${config.name} #${count + 1}` });
+      const baseName = config.name.replace(/\s+#\d+$/g, "");
+      const created = this.createGame({ ...config, name: `${baseName} #${count + 1}` });
       this.publish(finishedGameId, "auto_rotate", { nextGameId: created.id });
       void this.advance(created.id);
     } catch (error) {
