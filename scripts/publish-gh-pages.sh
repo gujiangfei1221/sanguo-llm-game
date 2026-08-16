@@ -12,7 +12,7 @@ WORKTREE="${PUBLISH_WORKTREE:-$ROOT/.publish}"
 GH_PAGES=1 npm run build -w @sanguo/web
 
 # 2. 准备 gh-pages 分支工作树
-if [ ! -d "$WORKTREE/.git" ]; then
+if [ ! -e "$WORKTREE/.git" ]; then
   if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
     git worktree add "$WORKTREE" "$BRANCH"
   else
@@ -21,8 +21,8 @@ if [ ! -d "$WORKTREE/.git" ]; then
   fi
 fi
 
-# 3. 清空并拷贝构建产物（含 replays/）
-rm -rf "$WORKTREE"/*
+# 3. 清空并拷贝构建产物（含 replays/；保留 .git 工作树指针）
+find "$WORKTREE" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
 cp -R apps/web/dist/* "$WORKTREE"/
 
 # 4. 提交并推送
