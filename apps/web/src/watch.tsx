@@ -183,6 +183,7 @@ export function WatchBoard({ game, onClose, extra }: { game: WatchGame; onClose?
           <span className="phase-indicator">第 {game.turn} 回合 · {phaseNames[game.phase]}</span>
         </div>
       </header>
+      <nav className="mobile-battle-nav"><button className={mobileView === "map" ? "active" : ""} onClick={() => setMobileView("map")}>地图</button><button className={mobileView === "factions" ? "active" : ""} onClick={() => setMobileView("factions")}>势力</button><button className={mobileView === "events" ? "active" : ""} onClick={() => setMobileView("events")}>事件</button><button className={mobileView === "decision" ? "active" : ""} onClick={() => setMobileView("decision")}>决策</button></nav>
 
       <main className="battle-layout">
         <aside className="battle-panel faction-rail" data-mobile-section="factions">
@@ -254,7 +255,6 @@ export function WatchBoard({ game, onClose, extra }: { game: WatchGame; onClose?
       </main>
 
       {game.phase === "FINISHED" && <section className="battle-panel battle-finale"><h2>天下归一</h2><p>{game.state.finishReason}</p>{game.state.audience.predictedWinnerFactionId && <p>观众预测：{factionNames[game.state.audience.predictedWinnerFactionId]} · {game.state.audience.predictionCorrect ? "命中" : "未命中"}</p>}</section>}
-      <nav className="mobile-battle-nav"><button className={mobileView === "map" ? "active" : ""} onClick={() => setMobileView("map")}>地图</button><button className={mobileView === "factions" ? "active" : ""} onClick={() => setMobileView("factions")}>势力</button><button className={mobileView === "events" ? "active" : ""} onClick={() => setMobileView("events")}>事件</button><button className={mobileView === "decision" ? "active" : ""} onClick={() => setMobileView("decision")}>决策</button></nav>
     </div>
   );
 }
