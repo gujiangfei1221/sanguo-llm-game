@@ -31,7 +31,9 @@ export function FollowPrompt() {
     let lastActiveAt: number | null = null;
     let timer: number | undefined;
 
-    const isActive = () => document.visibilityState === "visible" && document.hasFocus();
+    // 只要标签页可见就累计时间。注意：不能加 document.hasFocus() 判定——
+    // 移动端/纯浏览场景下用户不点击页面时 hasFocus() 恒为 false，弹窗会永远不触发。
+    const isActive = () => document.visibilityState === "visible";
 
     const consider = () => {
       if (dismissedRef.current) {
@@ -47,26 +49,18 @@ export function FollowPrompt() {
           setShow(true);
         }
       } else {
-        // 页面不可见/失焦：暂停累积，恢复时重新计基准
+        // 标签页隐藏/切走：暂停累积，恢复时重新计基准
         lastActiveAt = null;
       }
     };
 
-    const onVis = () => {
-      if (isActive() && lastActiveAt === null) lastActiveAt = Date.now();
-    };
-
     const stop = () => {
       window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("focus", onVis);
-      window.removeEventListener("blur", onVis);
+      document.removeEventListener("visibilitychange", consider);
     };
 
     timer = window.setInterval(consider, 1000);
-    document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("focus", onVis);
-    window.addEventListener("blur", onVis);
+    document.addEventListener("visibilitychange", consider);
     return stop;
   }, []);
 
