@@ -266,33 +266,46 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
       stdio: ["ignore", "pipe", "pipe"]
     });
 
-    let stdout = "";
+    let streamedText = "";
+    let finalText = "";
+    let usage: Record<string, unknown> | undefined;
     let stderr = "";
     let diagnosticBuffer = "";
     let firstOutputMs: number | undefined;
     let jsonlEvents = 0;
-    let exceededLimit = false;
+    let stdoutBytes = 0;
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
+      stdoutBytes += Buffer.byteLength(chunk);
       diagnosticBuffer += chunk;
       const lines = diagnosticBuffer.split("\n");
       diagnosticBuffer = lines.pop() ?? "";
       for (const line of lines) {
         if (!line.trim()) continue;
+        let event: { type?: string; assistantMessageEvent?: { type?: string; delta?: string; content?: string; usage?: Record<string, unknown> }; message?: { role?: string; content?: Array<{ type?: string; text?: string }>; usage?: Record<string, unknown> } };
         try {
-          const event = JSON.parse(line) as { type?: string; assistantMessageEvent?: { type?: string; delta?: string } };
-          jsonlEvents += 1;
+          event = JSON.parse(line) as typeof event;
+        } catch {
+          continue;
+        }
+        jsonlEvents += 1;
+        if (event.type === "message_update") {
           const update = event.assistantMessageEvent;
-          if (firstOutputMs === undefined && event.type === "message_update" && (update?.type === "thinking_delta" || update?.type === "text_delta") && update.delta) {
+          if (firstOutputMs === undefined && (update?.type === "thinking_delta" || update?.type === "text_delta") && update.delta) {
             firstOutputMs = Date.now() - startedAt;
           }
-        } catch {}
-      }
-      if (Buffer.byteLength(stdout) > 1024 * 1024) {
-        exceededLimit = true;
-        child.kill("SIGKILL");
+          if (update?.type === "text_delta" && typeof update.delta === "string" && Buffer.byteLength(streamedText) < 2 * 1024 * 1024) streamedText += update.delta;
+          if (update?.type === "text_end" && typeof update.content === "string") streamedText = update.content;
+          if ((update?.type === "done" || update?.type === "error") && update.usage) usage = update.usage;
+          continue;
+        }
+        if (event.type !== "message_end" && event.type !== "turn_end") continue;
+        const message = event.message;
+        if (message?.role !== "assistant") continue;
+        const text = message.content?.filter((item) => item.type === "text").map((item) => item.text ?? "").join("") ?? "";
+        if (text) finalText = text;
+        if (message.usage) usage = message.usage;
       }
     });
     child.stderr.on("data", (chunk: string) => {
@@ -304,7 +317,7 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
       const timeout = setTimeout(() => {
         child.kill("SIGKILL");
         const firstOutput = firstOutputMs === undefined ? "尚未收到首输出" : `首输出 ${firstOutputMs}ms`;
-        reject(new Error(`Pi 调用超过 ${options.timeoutMs}ms（${firstOutput}，已接收 ${jsonlEvents} 个事件 / ${Buffer.byteLength(stdout)} bytes）`));
+        reject(new Error(`Pi 调用超过 ${options.timeoutMs}ms（${firstOutput}，已接收 ${jsonlEvents} 个事件 / ${stdoutBytes} bytes）`));
       }, options.timeoutMs);
       child.once("error", (error) => {
         clearTimeout(timeout);
@@ -316,18 +329,21 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
       });
     });
 
-    if (exceededLimit) throw new Error("Pi 输出超过大小限制");
     if (exitCode !== 0) throw new Error(`Pi 退出码 ${exitCode}: ${stderr.trim().slice(-1000)}`);
-    const extracted = extractDecision(stdout, request.observation.privateMemory);
-    const initiative = extracted.decision.diplomacy.initiative;
+    const decisionText = finalText || streamedText;
+    if (!decisionText) throw new Error("Pi JSONL 中没有 assistant 最终文本");
+    const decision = modelDecisionSchema.safeParse(normalizeDecision(parseJsonText(decisionText), request.observation.privateMemory));
+    if (!decision.success) throw new Error(`Pi 决策格式错误：${decision.error.issues.map((issue) => issue.message).join("；")}`);
+    const initiative = decision.data.diplomacy.initiative;
     if (initiative && !request.observation.legalDiplomacy.some((legal) => sameInitiative(initiative, legal))) {
-      extracted.decision.diplomacy.initiative = undefined;
-      extracted.decision.reasonSummary = `${extracted.decision.reasonSummary}（外交行为不在当前白名单中，已忽略）`;
+      decision.data.diplomacy.initiative = undefined;
+      decision.data.reasonSummary = `${decision.data.reasonSummary}（外交行为不在当前白名单中，已忽略）`;
     }
     return {
-      ...extracted,
+      decision: decision.data,
+      usage,
       durationMs: Date.now() - startedAt,
-      diagnostics: { firstOutputMs, jsonlEvents, stdoutBytes: Buffer.byteLength(stdout) }
+      diagnostics: { firstOutputMs, jsonlEvents, stdoutBytes }
     };
   } finally {
     await rm(workingDirectory, { recursive: true, force: true });
