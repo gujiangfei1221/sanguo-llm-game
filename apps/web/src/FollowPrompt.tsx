@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 const ACCOUNT_NAME = "小小顾同学";
 const QR_SRC = `${import.meta.env.BASE_URL}qrcode-wechat.jpg`;
 
-const THRESHOLD_MS = 3 * 60 * 1000; // 留存 3 分钟
+const THRESHOLD_MS = 60 * 1000; // 留存 1 分钟
 const EVER_KEY = "sanguo:follow-prompt-ever"; // 已关注 → 永久不再弹
 const SESSION_KEY = "sanguo:follow-prompt-session"; // 本会话已提示过
 
