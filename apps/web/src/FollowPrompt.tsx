@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-// ⚠️ 这里改成你的公众号名称（弹窗里会展示给用户）
-const ACCOUNT_NAME = "大模型血战三国";
+// 公众号名称（弹窗里展示给用户搜索关注用）
+const ACCOUNT_NAME = "小小顾同学";
 const QR_SRC = `${import.meta.env.BASE_URL}qrcode-wechat.jpg`;
 
 const THRESHOLD_MS = 3 * 60 * 1000; // 留存 3 分钟
@@ -86,7 +86,8 @@ export function FollowPrompt() {
       <div className="follow-modal" onClick={(event) => event.stopPropagation()}>
         <button className="follow-close" aria-label="关闭" onClick={() => dismiss(false)}>×</button>
         <h2>喜欢这盘大棋？</h2>
-        <p>想第一时间围观大模型逐鹿中原？<br />关注公众号，随时来观战。</p>
+        <p>这里是「大模型血战三国」——三个大模型在棋盘上逐鹿中原。如果你感兴趣，后续我会持续迭代更多玩法与内容。</p>
+        <p>关注公众号「{ACCOUNT_NAME}」，第一时间收到新对局与更新～</p>
         <img className="follow-qr" src={QR_SRC} alt="公众号二维码" width={220} height={220} />
         <p className="follow-hint">长按识别二维码 · 或微信搜索「{ACCOUNT_NAME}」</p>
         <div className="follow-actions">
