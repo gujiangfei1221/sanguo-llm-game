@@ -79,9 +79,8 @@ export function FollowPrompt() {
     <div className="follow-overlay" role="dialog" aria-modal="true" onClick={() => dismiss(false)}>
       <div className="follow-modal" onClick={(event) => event.stopPropagation()}>
         <button className="follow-close" aria-label="关闭" onClick={() => dismiss(false)}>×</button>
-        <h2>喜欢这盘大棋？</h2>
-        <p>这里是「大模型血战三国」——三个大模型在棋盘上逐鹿中原。如果你感兴趣，后续我会持续迭代更多玩法与内容。</p>
-        <p>关注公众号「{ACCOUNT_NAME}」，第一时间收到新对局与更新～</p>
+        <p>三个大模型各自独立推理、自动决策，在三国战场上实时厮杀。如果你感兴趣，后续我会持续叠加新的玩法与功能。</p>
+        <p>关注公众号「{ACCOUNT_NAME}」，第一时间收到更新～</p>
         <img className="follow-qr" src={QR_SRC} alt="公众号二维码" width={220} height={220} />
         <p className="follow-hint">长按识别二维码 · 或微信搜索「{ACCOUNT_NAME}」</p>
         <div className="follow-actions">
