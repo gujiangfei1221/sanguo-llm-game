@@ -8,7 +8,8 @@ ROOT="$(pwd)"
 BRANCH="gh-pages"
 WORKTREE="${PUBLISH_WORKTREE:-$ROOT/.publish}"
 
-# 0. 全量重导回放（含战报索引 index.json；由 cron 先行 git pull 同步源码）
+# 0. 局名归一化 + 全量重导回放（含战报索引 index.json；由 cron 先行 git pull 同步源码）
+( cd "$ROOT" && node scripts/normalize-game-names.mjs >/dev/null 2>&1 ) || echo "[publish] 局名归一化失败，跳过"
 ( cd "$ROOT" && npm run export -w @sanguo/server >/dev/null 2>&1 ) || echo "[publish] 回放导出失败，继续发布现有内容"
 
 # 1. 构建前端（GH_PAGES=1 → Vite base=/sanguo-llm-game/，replays 已随 public 进入产物）
