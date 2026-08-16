@@ -1,0 +1,8 @@
+{
+  "name": "群雄逐鹿",
+  "factions": [
+    { "factionId": "wei", "controller": "model", "modelId": "deepseek-v4-flash" },
+    { "factionId": "shu", "controller": "model", "modelId": "doubao-seed-2.0-lite" },
+    { "factionId": "wu", "controller": "model", "modelId": "glm-latest" }
+  ]
+}
