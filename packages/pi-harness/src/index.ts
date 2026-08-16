@@ -274,6 +274,34 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
     let firstOutputMs: number | undefined;
     let jsonlEvents = 0;
     let stdoutBytes = 0;
+
+    const processLine = (line: string) => {
+      if (!line.trim()) return;
+      let event: { type?: string; assistantMessageEvent?: { type?: string; delta?: string; content?: string; usage?: Record<string, unknown> }; message?: { role?: string; content?: Array<{ type?: string; text?: string }>; usage?: Record<string, unknown> } };
+      try {
+        event = JSON.parse(line) as typeof event;
+      } catch {
+        return;
+      }
+      jsonlEvents += 1;
+      if (event.type === "message_update") {
+        const update = event.assistantMessageEvent;
+        if (firstOutputMs === undefined && (update?.type === "thinking_delta" || update?.type === "text_delta") && update.delta) {
+          firstOutputMs = Date.now() - startedAt;
+        }
+        if (update?.type === "text_delta" && typeof update.delta === "string" && Buffer.byteLength(streamedText) < 2 * 1024 * 1024) streamedText += update.delta;
+        if (update?.type === "text_end" && typeof update.content === "string") streamedText = update.content;
+        if ((update?.type === "done" || update?.type === "error") && update.usage) usage = update.usage;
+        return;
+      }
+      if (event.type !== "message_end" && event.type !== "turn_end") return;
+      const message = event.message;
+      if (message?.role !== "assistant") return;
+      const text = message.content?.filter((item) => item.type === "text").map((item) => item.text ?? "").join("") ?? "";
+      if (text) finalText = text;
+      if (message.usage) usage = message.usage;
+    };
+
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
@@ -281,32 +309,7 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
       diagnosticBuffer += chunk;
       const lines = diagnosticBuffer.split("\n");
       diagnosticBuffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let event: { type?: string; assistantMessageEvent?: { type?: string; delta?: string; content?: string; usage?: Record<string, unknown> }; message?: { role?: string; content?: Array<{ type?: string; text?: string }>; usage?: Record<string, unknown> } };
-        try {
-          event = JSON.parse(line) as typeof event;
-        } catch {
-          continue;
-        }
-        jsonlEvents += 1;
-        if (event.type === "message_update") {
-          const update = event.assistantMessageEvent;
-          if (firstOutputMs === undefined && (update?.type === "thinking_delta" || update?.type === "text_delta") && update.delta) {
-            firstOutputMs = Date.now() - startedAt;
-          }
-          if (update?.type === "text_delta" && typeof update.delta === "string" && Buffer.byteLength(streamedText) < 2 * 1024 * 1024) streamedText += update.delta;
-          if (update?.type === "text_end" && typeof update.content === "string") streamedText = update.content;
-          if ((update?.type === "done" || update?.type === "error") && update.usage) usage = update.usage;
-          continue;
-        }
-        if (event.type !== "message_end" && event.type !== "turn_end") continue;
-        const message = event.message;
-        if (message?.role !== "assistant") continue;
-        const text = message.content?.filter((item) => item.type === "text").map((item) => item.text ?? "").join("") ?? "";
-        if (text) finalText = text;
-        if (message.usage) usage = message.usage;
-      }
+      for (const line of lines) processLine(line);
     });
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
@@ -328,6 +331,9 @@ async function runProcess(options: Required<PiHarnessOptions>, request: HarnessR
         resolve(code ?? -1);
       });
     });
+
+    // 处理最后一行可能没有换行符的情况
+    if (diagnosticBuffer.trim()) processLine(diagnosticBuffer);
 
     if (exitCode !== 0) throw new Error(`Pi 退出码 ${exitCode}: ${stderr.trim().slice(-1000)}`);
     const decisionText = finalText || streamedText;
