@@ -216,9 +216,9 @@ function Home({ models, games, onCreated, onOpen, onError }: { models: ModelConf
 }
 
 export const cityPositions: Record<string, { x: number; y: number }> = {
-  luoyang: { x: 44, y: 18 }, xuchang: { x: 62, y: 23 }, wancheng: { x: 49, y: 38 },
-  hanzhong: { x: 31, y: 43 }, chengdu: { x: 18, y: 65 }, jiangzhou: { x: 34, y: 68 },
-  chaisang: { x: 59, y: 60 }, jianye: { x: 75, y: 54 }, wujun: { x: 84, y: 72 }
+  luoyang: { x: 44, y: 15 }, xuchang: { x: 62, y: 22 }, wancheng: { x: 49, y: 40 },
+  hanzhong: { x: 31, y: 45 }, chengdu: { x: 18, y: 72 }, jiangzhou: { x: 34, y: 76 },
+  chaisang: { x: 59, y: 65 }, jianye: { x: 75, y: 57 }, wujun: { x: 84, y: 83 }
 };
 
 function GameView({ gameId, models, onError, onClose }: { gameId: string; models: ModelConfig[]; onError: (message: string) => void; onClose: () => void }) {
@@ -314,7 +314,7 @@ function GameView({ gameId, models, onError, onClose }: { gameId: string; models
 
       <div className="battle-center" data-mobile-section="map">
         <section className="battle-panel strategic-map-panel">
-          <div className="map-heading"><div><h1>天下态势图</h1><p>按三国时期地理方位重排，路线以剧本连接关系为准</p></div><div className="map-legend"><span>红实线 · 进攻</span><span>阵营虚线 · 调兵</span><span>灰虚线 · 城池路线</span></div></div>
+          <div className="map-heading"><div><h1>天下态势图</h1><p>按三国时期地理方位重排，路线以剧本连接关系为准</p></div><div className="map-legend" aria-label="地图图例"><span className="legend-attack"><i />进攻</span><span className="legend-transfer"><i />调兵</span><span className="legend-route"><i />路线</span></div></div>
           <div className="strategy-map">
             <svg className="route-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="attack-arrowhead" viewBox="0 0 6 6" markerWidth="6" markerHeight="6" refX="5.5" refY="3" orient="auto" markerUnits="strokeWidth"><path className="attack-arrowhead" d="M0 0 L6 3 L0 6 Z" /></marker>{["wei", "shu", "wu"].map((factionId) => <marker id={`transfer-arrowhead-${factionId}`} key={factionId} viewBox="0 0 6 6" markerWidth="6" markerHeight="6" refX="5.5" refY="3" orient="auto" markerUnits="strokeWidth"><path className={`transfer-arrowhead owner-${factionId}`} d="M0 0 L6 3 L0 6 Z" /></marker>)}</defs>{edges.map(([sourceId, targetId]) => {
               const source = cityPositions[sourceId]; const target = cityPositions[targetId];
